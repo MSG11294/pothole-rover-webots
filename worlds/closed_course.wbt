@@ -1,6 +1,22 @@
 #VRML_SIM R2025a utf8
 EXTERNPROTO "../protos/Rover.proto"
-WorldInfo { basicTimeStep 32 coordinateSystem "ENU" contactProperties [ ContactProperties { material1 "rubber" coulombFriction [ .8 ] } ] }
+WorldInfo {
+  title "Pothole Rover - Closed Course"
+  info [
+    "Four-wheel rover with four cameras, depth-based pothole detection, simulated repairs and autonomous docking."
+    "Supervised closed simulation course."
+  ]
+  basicTimeStep 32
+  coordinateSystem "ENU"
+  contactProperties [
+    ContactProperties {
+      material1 "rubber"
+      coulombFriction [
+        0.8
+      ]
+    }
+  ]
+}
 Viewpoint { orientation 0.15151802467041844 0.3919175642582944 0.9074375521355837 2.4667795217583475 position 7 6 7 }
 Background { skyColor [ .55 .7 .85 ] }
 DirectionalLight { direction -.5 -.4 -1 intensity 1 }
