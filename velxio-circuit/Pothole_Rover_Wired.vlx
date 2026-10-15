@@ -1,0 +1,1878 @@
+{
+  "format": "velxio-project",
+  "version": 1,
+  "exportedAt": "2026-10-15T05:25:33.500Z",
+  "name": "Pothole Rover — wired bench prototype",
+  "boards": [
+    {
+      "id": "pi",
+      "name": "Pi 3B — coordinator",
+      "boardKind": "raspberry-pi-3",
+      "x": 70,
+      "y": 80,
+      "activeFileGroupId": "group-pi",
+      "serialBaudRate": 9600,
+      "languageMode": "arduino"
+    },
+    {
+      "id": "esp",
+      "name": "ESP32 — sensors and motor controller",
+      "boardKind": "esp32",
+      "x": 510,
+      "y": 120,
+      "activeFileGroupId": "group-esp",
+      "serialBaudRate": 115200,
+      "languageMode": "arduino"
+    },
+    {
+      "id": "uno",
+      "name": "Uno — dispensing gate",
+      "boardKind": "arduino-uno",
+      "x": 980,
+      "y": 100,
+      "activeFileGroupId": "group-uno",
+      "serialBaudRate": 9600,
+      "languageMode": "arduino",
+      "libraries": [
+        "Servo"
+      ]
+    }
+  ],
+  "fileGroups": {
+    "group-pi": [
+      {
+        "name": "script.py",
+        "content": "\"\"\"Bench communication check. Sends STATUS only; no autonomous motion.\"\"\"\nimport time\nimport serial\n\nport = serial.Serial(\"/dev/serial0\", baudrate=9600, timeout=0.2)\nprint(\"Pi running: STATUS-only bench test\")\ntry:\n    while True:\n        port.write(b\"STATUS\\n\")\n        reply = port.readline().decode(errors=\"replace\").strip()\n        if reply:\n            print(reply)\n        time.sleep(1)\nfinally:\n    port.close()\n"
+      }
+    ],
+    "group-esp": [
+      {
+        "name": "sketch.ino",
+        "content": "// WIRING / BENCH TEST ONLY. Motor enables remain OFF.\n#include <Arduino.h>\n#include <Wire.h>\n\nconst int FRONT_TRIG=4, FRONT_ECHO=34, DOWN_TRIG=13, DOWN_ECHO=35;\nconst int REPAIR_REQUEST=23, REPAIR_ACK=33, ESTOP=32, BATTERY_POT=36;\nconst int ENA=25, IN1=26, IN2=27, ENB=14, IN3=18, IN4=19;\nHardwareSerial PiLink(2);\nString line;\nbool requested=false;\nunsigned long repairStarted=0, sampled=0;\nfloat front=-1, down=-1;\n\nfloat cm(int trig,int echo) {\n  digitalWrite(trig,LOW); delayMicroseconds(3);\n  digitalWrite(trig,HIGH); delayMicroseconds(10); digitalWrite(trig,LOW);\n  unsigned long us=pulseIn(echo,HIGH,25000);\n  return us ? us/58.0f : -1;\n}\nvoid stopOutputs() {\n  digitalWrite(ENA,LOW); digitalWrite(ENB,LOW);\n  digitalWrite(IN1,LOW); digitalWrite(IN2,LOW);\n  digitalWrite(IN3,LOW); digitalWrite(IN4,LOW);\n}\nvoid setup() {\n  Serial.begin(115200);\n  PiLink.begin(9600,SERIAL_8N1,16,17);\n  const int outputs[]={ENA,IN1,IN2,ENB,IN3,IN4,FRONT_TRIG,DOWN_TRIG,REPAIR_REQUEST};\n  for(int p: outputs) {\n    pinMode(p,OUTPUT); digitalWrite(p,LOW);\n  }\n  pinMode(FRONT_ECHO,INPUT); pinMode(DOWN_ECHO,INPUT); pinMode(REPAIR_ACK,INPUT);\n  pinMode(ESTOP,INPUT_PULLUP); pinMode(BATTERY_POT,INPUT);\n  stopOutputs(); Wire.begin(21,22);\n  Serial.println(\"ESP32 bench test ready; motor outputs disabled.\");\n  Wire.beginTransmission(0x3c);\n  Serial.println(Wire.endTransmission()==0 ? \"OLED detected at 0x3c\" : \"OLED not detected\");\n}\nvoid loop() {\n  stopOutputs(); // this starter never drives the virtual winding loads\n  if(millis()-sampled>=500) {\n    sampled=millis();\n    front=cm(FRONT_TRIG,FRONT_ECHO);\n    delay(35); // separate the two ultrasound pings\n    down=cm(DOWN_TRIG,DOWN_ECHO);\n  }\n  if(digitalRead(ESTOP)==LOW) { digitalWrite(REPAIR_REQUEST,LOW); requested=false; }\n  if(requested && (digitalRead(REPAIR_ACK)==HIGH || millis()-repairStarted>5000)) {\n    PiLink.println(digitalRead(REPAIR_ACK)==HIGH ? \"REPAIR_DONE\" : \"REPAIR_TIMEOUT\");\n    digitalWrite(REPAIR_REQUEST,LOW); requested=false;\n  }\n  while(PiLink.available()) {\n    char c=PiLink.read();\n    if(c=='\\r') continue;\n    if(c!='\\n') { if(line.length()<60) line+=c; else line=\"\"; continue; }\n    line.trim();\n    if(line==\"STATUS\") {\n      PiLink.printf(\"STATUS front=%.1f down=%.1f battery_adc=%d estop=%d ack=%d\\n\",\n        front,down,analogRead(BATTERY_POT),digitalRead(ESTOP)==LOW,digitalRead(REPAIR_ACK));\n    } else if(line==\"STOP\") {\n      digitalWrite(REPAIR_REQUEST,LOW); requested=false; PiLink.println(\"STOPPED\");\n    } else if(line==\"REPAIR\" && !requested && digitalRead(ESTOP)==HIGH) {\n      digitalWrite(REPAIR_REQUEST,HIGH); requested=true; repairStarted=millis();\n    }\n    line=\"\";\n  }\n  delay(5);\n}\n"
+      }
+    ],
+    "group-uno": [
+      {
+        "name": "sketch.ino",
+        "content": "// Servo-gate bench controller. This is not a granular repair-material simulation.\n#include <Servo.h>\nconst int REQUEST=2, ACK=3, SERVO_PIN=9;\nServo gate;\nbool dispensing=false, served=false;\nunsigned long opened=0;\nvoid setup() {\n  pinMode(REQUEST,INPUT); pinMode(ACK,OUTPUT); digitalWrite(ACK,LOW);\n  gate.attach(SERVO_PIN); gate.write(0);\n}\nvoid loop() {\n  bool request=digitalRead(REQUEST)==HIGH;\n  if(!request) {\n    gate.write(0); dispensing=false; served=false; digitalWrite(ACK,LOW);\n  } else if(!dispensing && !served) {\n    gate.write(80); dispensing=true; opened=millis();\n  } else if(dispensing && millis()-opened>=2000) {\n    gate.write(0); dispensing=false; served=true; digitalWrite(ACK,HIGH);\n  }\n  delay(5);\n}\n"
+      },
+      {
+        "name": "libraries.txt",
+        "content": "Servo\n"
+      }
+    ]
+  },
+  "components": [
+    {
+      "id": "oled",
+      "metadataId": "ssd1306-i2c-4pin",
+      "x": 535,
+      "y": 20,
+      "properties": {
+        "i2cAddress": "0x3c"
+      }
+    },
+    {
+      "id": "servo",
+      "metadataId": "servo",
+      "x": 1040,
+      "y": 440,
+      "properties": {
+        "angle": 0,
+        "horn": "single"
+      }
+    },
+    {
+      "id": "front",
+      "metadataId": "hc-sr04",
+      "x": 120,
+      "y": 440,
+      "properties": {
+        "distance": 100
+      }
+    },
+    {
+      "id": "down",
+      "metadataId": "hc-sr04",
+      "x": 120,
+      "y": 670,
+      "properties": {
+        "distance": 15
+      }
+    },
+    {
+      "id": "stop",
+      "metadataId": "pushbutton",
+      "x": 580,
+      "y": 510,
+      "properties": {
+        "color": "red",
+        "label": "STOP",
+        "pressed": false
+      }
+    },
+    {
+      "id": "battery",
+      "metadataId": "potentiometer",
+      "x": 550,
+      "y": 760,
+      "properties": {
+        "min": 0,
+        "max": 1023,
+        "value": 900
+      }
+    },
+    {
+      "id": "psu",
+      "metadataId": "power-supply",
+      "x": 1300,
+      "y": 440,
+      "properties": {
+        "mode": "dc",
+        "voltage": 5,
+        "frequency": 50,
+        "currentLimit": 3
+      }
+    },
+    {
+      "id": "driver",
+      "metadataId": "motor-driver-l293d",
+      "x": 1000,
+      "y": 700,
+      "properties": {}
+    },
+    {
+      "id": "breadboard",
+      "metadataId": "breadboard",
+      "x": 100,
+      "y": 1000,
+      "properties": {}
+    },
+    {
+      "id": "front-r1",
+      "metadataId": "resistor",
+      "x": 340,
+      "y": 470,
+      "properties": {
+        "value": "1000"
+      }
+    },
+    {
+      "id": "front-r2",
+      "metadataId": "resistor",
+      "x": 340,
+      "y": 535,
+      "properties": {
+        "value": "2000"
+      }
+    },
+    {
+      "id": "down-r1",
+      "metadataId": "resistor",
+      "x": 340,
+      "y": 700,
+      "properties": {
+        "value": "1000"
+      }
+    },
+    {
+      "id": "down-r2",
+      "metadataId": "resistor",
+      "x": 340,
+      "y": 765,
+      "properties": {
+        "value": "2000"
+      }
+    },
+    {
+      "id": "ack-r1",
+      "metadataId": "resistor",
+      "x": 820,
+      "y": 410,
+      "properties": {
+        "value": "1000"
+      }
+    },
+    {
+      "id": "ack-r2",
+      "metadataId": "resistor",
+      "x": 820,
+      "y": 475,
+      "properties": {
+        "value": "2000"
+      }
+    },
+    {
+      "id": "request-pulldown",
+      "metadataId": "resistor",
+      "x": 830,
+      "y": 550,
+      "properties": {
+        "value": "10000"
+      }
+    },
+    {
+      "id": "left-front-winding",
+      "metadataId": "resistor",
+      "x": 1200,
+      "y": 680,
+      "properties": {
+        "value": "47"
+      }
+    },
+    {
+      "id": "left-rear-winding",
+      "metadataId": "resistor",
+      "x": 1370,
+      "y": 680,
+      "properties": {
+        "value": "47"
+      }
+    },
+    {
+      "id": "right-front-winding",
+      "metadataId": "resistor",
+      "x": 1200,
+      "y": 820,
+      "properties": {
+        "value": "47"
+      }
+    },
+    {
+      "id": "right-rear-winding",
+      "metadataId": "resistor",
+      "x": 1370,
+      "y": 820,
+      "properties": {
+        "value": "47"
+      }
+    }
+  ],
+  "wires": [
+    {
+      "id": "w1",
+      "start": {
+        "componentId": "pi",
+        "pinName": "6",
+        "x": 100,
+        "y": 100
+      },
+      "end": {
+        "componentId": "esp",
+        "pinName": "GND",
+        "x": 540,
+        "y": 140
+      },
+      "waypoints": [
+        {
+          "x": 180,
+          "y": 100
+        },
+        {
+          "x": 180,
+          "y": 140
+        }
+      ],
+      "color": "#475569",
+      "signalType": "power-gnd",
+      "autoRouted": true
+    },
+    {
+      "id": "w2",
+      "start": {
+        "componentId": "esp",
+        "pinName": "GND",
+        "x": 540,
+        "y": 140
+      },
+      "end": {
+        "componentId": "uno",
+        "pinName": "GND",
+        "x": 1010,
+        "y": 120
+      },
+      "waypoints": [
+        {
+          "x": 975,
+          "y": 140
+        },
+        {
+          "x": 975,
+          "y": 120
+        }
+      ],
+      "color": "#475569",
+      "signalType": "power-gnd",
+      "autoRouted": true
+    },
+    {
+      "id": "w3",
+      "start": {
+        "componentId": "psu",
+        "pinName": "GND",
+        "x": 1330,
+        "y": 460
+      },
+      "end": {
+        "componentId": "esp",
+        "pinName": "GND",
+        "x": 540,
+        "y": 140
+      },
+      "waypoints": [
+        {
+          "x": 1255,
+          "y": 460
+        },
+        {
+          "x": 1255,
+          "y": 140
+        }
+      ],
+      "color": "#475569",
+      "signalType": "power-gnd",
+      "autoRouted": true
+    },
+    {
+      "id": "w4",
+      "start": {
+        "componentId": "pi",
+        "pinName": "8",
+        "x": 100,
+        "y": 100
+      },
+      "end": {
+        "componentId": "esp",
+        "pinName": "RX2",
+        "x": 540,
+        "y": 140
+      },
+      "waypoints": [
+        {
+          "x": 310,
+          "y": 100
+        },
+        {
+          "x": 310,
+          "y": 140
+        }
+      ],
+      "color": "#a78bfa",
+      "signalType": "usart",
+      "autoRouted": true
+    },
+    {
+      "id": "w5",
+      "start": {
+        "componentId": "esp",
+        "pinName": "TX2",
+        "x": 540,
+        "y": 140
+      },
+      "end": {
+        "componentId": "pi",
+        "pinName": "10",
+        "x": 100,
+        "y": 100
+      },
+      "waypoints": [
+        {
+          "x": 330,
+          "y": 140
+        },
+        {
+          "x": 330,
+          "y": 100
+        }
+      ],
+      "color": "#a78bfa",
+      "signalType": "usart",
+      "autoRouted": true
+    },
+    {
+      "id": "w6",
+      "start": {
+        "componentId": "esp",
+        "pinName": "23",
+        "x": 540,
+        "y": 140
+      },
+      "end": {
+        "componentId": "uno",
+        "pinName": "2",
+        "x": 1010,
+        "y": 120
+      },
+      "waypoints": [
+        {
+          "x": 725,
+          "y": 140
+        },
+        {
+          "x": 725,
+          "y": 120
+        }
+      ],
+      "color": "#38bdf8",
+      "signalType": "digital",
+      "autoRouted": true
+    },
+    {
+      "id": "w7",
+      "start": {
+        "componentId": "esp",
+        "pinName": "23",
+        "x": 540,
+        "y": 140
+      },
+      "end": {
+        "componentId": "request-pulldown",
+        "pinName": "1",
+        "x": 860,
+        "y": 570
+      },
+      "waypoints": [
+        {
+          "x": 700,
+          "y": 140
+        },
+        {
+          "x": 700,
+          "y": 570
+        }
+      ],
+      "color": "#38bdf8",
+      "signalType": "digital",
+      "autoRouted": true
+    },
+    {
+      "id": "w8",
+      "start": {
+        "componentId": "request-pulldown",
+        "pinName": "2",
+        "x": 860,
+        "y": 570
+      },
+      "end": {
+        "componentId": "esp",
+        "pinName": "GND",
+        "x": 540,
+        "y": 140
+      },
+      "waypoints": [
+        {
+          "x": 700,
+          "y": 570
+        },
+        {
+          "x": 700,
+          "y": 140
+        }
+      ],
+      "color": "#475569",
+      "signalType": "power-gnd",
+      "autoRouted": true
+    },
+    {
+      "id": "w9",
+      "start": {
+        "componentId": "uno",
+        "pinName": "3",
+        "x": 1010,
+        "y": 120
+      },
+      "end": {
+        "componentId": "ack-r1",
+        "pinName": "1",
+        "x": 850,
+        "y": 430
+      },
+      "waypoints": [
+        {
+          "x": 930,
+          "y": 120
+        },
+        {
+          "x": 930,
+          "y": 430
+        }
+      ],
+      "color": "#38bdf8",
+      "signalType": "digital",
+      "autoRouted": true
+    },
+    {
+      "id": "w10",
+      "start": {
+        "componentId": "ack-r1",
+        "pinName": "2",
+        "x": 850,
+        "y": 430
+      },
+      "end": {
+        "componentId": "ack-r2",
+        "pinName": "1",
+        "x": 850,
+        "y": 495
+      },
+      "waypoints": [
+        {
+          "x": 850,
+          "y": 430
+        },
+        {
+          "x": 850,
+          "y": 495
+        }
+      ],
+      "color": "#fb923c",
+      "signalType": "analog",
+      "autoRouted": true
+    },
+    {
+      "id": "w11",
+      "start": {
+        "componentId": "ack-r1",
+        "pinName": "2",
+        "x": 850,
+        "y": 430
+      },
+      "end": {
+        "componentId": "esp",
+        "pinName": "33",
+        "x": 540,
+        "y": 140
+      },
+      "waypoints": [
+        {
+          "x": 695,
+          "y": 430
+        },
+        {
+          "x": 695,
+          "y": 140
+        }
+      ],
+      "color": "#38bdf8",
+      "signalType": "digital",
+      "autoRouted": true
+    },
+    {
+      "id": "w12",
+      "start": {
+        "componentId": "ack-r2",
+        "pinName": "2",
+        "x": 850,
+        "y": 495
+      },
+      "end": {
+        "componentId": "esp",
+        "pinName": "GND",
+        "x": 540,
+        "y": 140
+      },
+      "waypoints": [
+        {
+          "x": 695,
+          "y": 495
+        },
+        {
+          "x": 695,
+          "y": 140
+        }
+      ],
+      "color": "#475569",
+      "signalType": "power-gnd",
+      "autoRouted": true
+    },
+    {
+      "id": "w13",
+      "start": {
+        "componentId": "uno",
+        "pinName": "9",
+        "x": 1010,
+        "y": 120
+      },
+      "end": {
+        "componentId": "servo",
+        "pinName": "PWM",
+        "x": 1070,
+        "y": 460
+      },
+      "waypoints": [
+        {
+          "x": 1040,
+          "y": 120
+        },
+        {
+          "x": 1040,
+          "y": 460
+        }
+      ],
+      "color": "#facc15",
+      "signalType": "pwm",
+      "autoRouted": true
+    },
+    {
+      "id": "w14",
+      "start": {
+        "componentId": "psu",
+        "pinName": "SIG",
+        "x": 1330,
+        "y": 460
+      },
+      "end": {
+        "componentId": "servo",
+        "pinName": "V+",
+        "x": 1070,
+        "y": 460
+      },
+      "waypoints": [
+        {
+          "x": 1300,
+          "y": 460
+        },
+        {
+          "x": 1300,
+          "y": 460
+        }
+      ],
+      "color": "#ef4444",
+      "signalType": "power-vcc",
+      "autoRouted": true
+    },
+    {
+      "id": "w15",
+      "start": {
+        "componentId": "psu",
+        "pinName": "GND",
+        "x": 1330,
+        "y": 460
+      },
+      "end": {
+        "componentId": "servo",
+        "pinName": "GND",
+        "x": 1070,
+        "y": 460
+      },
+      "waypoints": [
+        {
+          "x": 1330,
+          "y": 460
+        },
+        {
+          "x": 1330,
+          "y": 460
+        }
+      ],
+      "color": "#475569",
+      "signalType": "power-gnd",
+      "autoRouted": true
+    },
+    {
+      "id": "w16",
+      "start": {
+        "componentId": "psu",
+        "pinName": "SIG",
+        "x": 1330,
+        "y": 460
+      },
+      "end": {
+        "componentId": "front",
+        "pinName": "VCC",
+        "x": 150,
+        "y": 460
+      },
+      "waypoints": [
+        {
+          "x": 960,
+          "y": 460
+        },
+        {
+          "x": 960,
+          "y": 460
+        }
+      ],
+      "color": "#ef4444",
+      "signalType": "power-vcc",
+      "autoRouted": true
+    },
+    {
+      "id": "w17",
+      "start": {
+        "componentId": "psu",
+        "pinName": "GND",
+        "x": 1330,
+        "y": 460
+      },
+      "end": {
+        "componentId": "front",
+        "pinName": "GND",
+        "x": 150,
+        "y": 460
+      },
+      "waypoints": [
+        {
+          "x": 980,
+          "y": 460
+        },
+        {
+          "x": 980,
+          "y": 460
+        }
+      ],
+      "color": "#475569",
+      "signalType": "power-gnd",
+      "autoRouted": true
+    },
+    {
+      "id": "w18",
+      "start": {
+        "componentId": "esp",
+        "pinName": "4",
+        "x": 540,
+        "y": 140
+      },
+      "end": {
+        "componentId": "front",
+        "pinName": "TRIG",
+        "x": 150,
+        "y": 460
+      },
+      "waypoints": [
+        {
+          "x": 345,
+          "y": 140
+        },
+        {
+          "x": 345,
+          "y": 460
+        }
+      ],
+      "color": "#38bdf8",
+      "signalType": "digital",
+      "autoRouted": true
+    },
+    {
+      "id": "w19",
+      "start": {
+        "componentId": "front",
+        "pinName": "ECHO",
+        "x": 150,
+        "y": 460
+      },
+      "end": {
+        "componentId": "front-r1",
+        "pinName": "1",
+        "x": 370,
+        "y": 490
+      },
+      "waypoints": [
+        {
+          "x": 260,
+          "y": 460
+        },
+        {
+          "x": 260,
+          "y": 490
+        }
+      ],
+      "color": "#38bdf8",
+      "signalType": "digital",
+      "autoRouted": true
+    },
+    {
+      "id": "w20",
+      "start": {
+        "componentId": "front-r1",
+        "pinName": "2",
+        "x": 370,
+        "y": 490
+      },
+      "end": {
+        "componentId": "front-r2",
+        "pinName": "1",
+        "x": 370,
+        "y": 555
+      },
+      "waypoints": [
+        {
+          "x": 370,
+          "y": 490
+        },
+        {
+          "x": 370,
+          "y": 555
+        }
+      ],
+      "color": "#fb923c",
+      "signalType": "analog",
+      "autoRouted": true
+    },
+    {
+      "id": "w21",
+      "start": {
+        "componentId": "front-r1",
+        "pinName": "2",
+        "x": 370,
+        "y": 490
+      },
+      "end": {
+        "componentId": "esp",
+        "pinName": "34",
+        "x": 540,
+        "y": 140
+      },
+      "waypoints": [
+        {
+          "x": 455,
+          "y": 490
+        },
+        {
+          "x": 455,
+          "y": 140
+        }
+      ],
+      "color": "#38bdf8",
+      "signalType": "digital",
+      "autoRouted": true
+    },
+    {
+      "id": "w22",
+      "start": {
+        "componentId": "front-r2",
+        "pinName": "2",
+        "x": 370,
+        "y": 555
+      },
+      "end": {
+        "componentId": "esp",
+        "pinName": "GND",
+        "x": 540,
+        "y": 140
+      },
+      "waypoints": [
+        {
+          "x": 455,
+          "y": 555
+        },
+        {
+          "x": 455,
+          "y": 140
+        }
+      ],
+      "color": "#475569",
+      "signalType": "power-gnd",
+      "autoRouted": true
+    },
+    {
+      "id": "w23",
+      "start": {
+        "componentId": "psu",
+        "pinName": "SIG",
+        "x": 1330,
+        "y": 460
+      },
+      "end": {
+        "componentId": "down",
+        "pinName": "VCC",
+        "x": 150,
+        "y": 690
+      },
+      "waypoints": [
+        {
+          "x": 960,
+          "y": 460
+        },
+        {
+          "x": 960,
+          "y": 690
+        }
+      ],
+      "color": "#ef4444",
+      "signalType": "power-vcc",
+      "autoRouted": true
+    },
+    {
+      "id": "w24",
+      "start": {
+        "componentId": "psu",
+        "pinName": "GND",
+        "x": 1330,
+        "y": 460
+      },
+      "end": {
+        "componentId": "down",
+        "pinName": "GND",
+        "x": 150,
+        "y": 690
+      },
+      "waypoints": [
+        {
+          "x": 980,
+          "y": 460
+        },
+        {
+          "x": 980,
+          "y": 690
+        }
+      ],
+      "color": "#475569",
+      "signalType": "power-gnd",
+      "autoRouted": true
+    },
+    {
+      "id": "w25",
+      "start": {
+        "componentId": "esp",
+        "pinName": "13",
+        "x": 540,
+        "y": 140
+      },
+      "end": {
+        "componentId": "down",
+        "pinName": "TRIG",
+        "x": 150,
+        "y": 690
+      },
+      "waypoints": [
+        {
+          "x": 345,
+          "y": 140
+        },
+        {
+          "x": 345,
+          "y": 690
+        }
+      ],
+      "color": "#38bdf8",
+      "signalType": "digital",
+      "autoRouted": true
+    },
+    {
+      "id": "w26",
+      "start": {
+        "componentId": "down",
+        "pinName": "ECHO",
+        "x": 150,
+        "y": 690
+      },
+      "end": {
+        "componentId": "down-r1",
+        "pinName": "1",
+        "x": 370,
+        "y": 720
+      },
+      "waypoints": [
+        {
+          "x": 260,
+          "y": 690
+        },
+        {
+          "x": 260,
+          "y": 720
+        }
+      ],
+      "color": "#38bdf8",
+      "signalType": "digital",
+      "autoRouted": true
+    },
+    {
+      "id": "w27",
+      "start": {
+        "componentId": "down-r1",
+        "pinName": "2",
+        "x": 370,
+        "y": 720
+      },
+      "end": {
+        "componentId": "down-r2",
+        "pinName": "1",
+        "x": 370,
+        "y": 785
+      },
+      "waypoints": [
+        {
+          "x": 370,
+          "y": 720
+        },
+        {
+          "x": 370,
+          "y": 785
+        }
+      ],
+      "color": "#fb923c",
+      "signalType": "analog",
+      "autoRouted": true
+    },
+    {
+      "id": "w28",
+      "start": {
+        "componentId": "down-r1",
+        "pinName": "2",
+        "x": 370,
+        "y": 720
+      },
+      "end": {
+        "componentId": "esp",
+        "pinName": "35",
+        "x": 540,
+        "y": 140
+      },
+      "waypoints": [
+        {
+          "x": 455,
+          "y": 720
+        },
+        {
+          "x": 455,
+          "y": 140
+        }
+      ],
+      "color": "#38bdf8",
+      "signalType": "digital",
+      "autoRouted": true
+    },
+    {
+      "id": "w29",
+      "start": {
+        "componentId": "down-r2",
+        "pinName": "2",
+        "x": 370,
+        "y": 785
+      },
+      "end": {
+        "componentId": "esp",
+        "pinName": "GND",
+        "x": 540,
+        "y": 140
+      },
+      "waypoints": [
+        {
+          "x": 455,
+          "y": 785
+        },
+        {
+          "x": 455,
+          "y": 140
+        }
+      ],
+      "color": "#475569",
+      "signalType": "power-gnd",
+      "autoRouted": true
+    },
+    {
+      "id": "w30",
+      "start": {
+        "componentId": "esp",
+        "pinName": "3V3",
+        "x": 540,
+        "y": 140
+      },
+      "end": {
+        "componentId": "oled",
+        "pinName": "VCC",
+        "x": 565,
+        "y": 40
+      },
+      "waypoints": [
+        {
+          "x": 552.5,
+          "y": 140
+        },
+        {
+          "x": 552.5,
+          "y": 40
+        }
+      ],
+      "color": "#ef4444",
+      "signalType": "power-vcc",
+      "autoRouted": true
+    },
+    {
+      "id": "w31",
+      "start": {
+        "componentId": "esp",
+        "pinName": "GND",
+        "x": 540,
+        "y": 140
+      },
+      "end": {
+        "componentId": "oled",
+        "pinName": "GND",
+        "x": 565,
+        "y": 40
+      },
+      "waypoints": [
+        {
+          "x": 552.5,
+          "y": 140
+        },
+        {
+          "x": 552.5,
+          "y": 40
+        }
+      ],
+      "color": "#475569",
+      "signalType": "power-gnd",
+      "autoRouted": true
+    },
+    {
+      "id": "w32",
+      "start": {
+        "componentId": "esp",
+        "pinName": "21",
+        "x": 540,
+        "y": 140
+      },
+      "end": {
+        "componentId": "oled",
+        "pinName": "SDA",
+        "x": 565,
+        "y": 40
+      },
+      "waypoints": [
+        {
+          "x": 552.5,
+          "y": 140
+        },
+        {
+          "x": 552.5,
+          "y": 40
+        }
+      ],
+      "color": "#34d399",
+      "signalType": "i2c",
+      "autoRouted": true
+    },
+    {
+      "id": "w33",
+      "start": {
+        "componentId": "esp",
+        "pinName": "22",
+        "x": 540,
+        "y": 140
+      },
+      "end": {
+        "componentId": "oled",
+        "pinName": "SCL",
+        "x": 565,
+        "y": 40
+      },
+      "waypoints": [
+        {
+          "x": 552.5,
+          "y": 140
+        },
+        {
+          "x": 552.5,
+          "y": 40
+        }
+      ],
+      "color": "#34d399",
+      "signalType": "i2c",
+      "autoRouted": true
+    },
+    {
+      "id": "w34",
+      "start": {
+        "componentId": "esp",
+        "pinName": "32",
+        "x": 540,
+        "y": 140
+      },
+      "end": {
+        "componentId": "stop",
+        "pinName": "1.l",
+        "x": 610,
+        "y": 530
+      },
+      "waypoints": [
+        {
+          "x": 575,
+          "y": 140
+        },
+        {
+          "x": 575,
+          "y": 530
+        }
+      ],
+      "color": "#38bdf8",
+      "signalType": "digital",
+      "autoRouted": true
+    },
+    {
+      "id": "w35",
+      "start": {
+        "componentId": "stop",
+        "pinName": "2.l",
+        "x": 610,
+        "y": 530
+      },
+      "end": {
+        "componentId": "esp",
+        "pinName": "GND",
+        "x": 540,
+        "y": 140
+      },
+      "waypoints": [
+        {
+          "x": 575,
+          "y": 530
+        },
+        {
+          "x": 575,
+          "y": 140
+        }
+      ],
+      "color": "#475569",
+      "signalType": "power-gnd",
+      "autoRouted": true
+    },
+    {
+      "id": "w36",
+      "start": {
+        "componentId": "esp",
+        "pinName": "3V3",
+        "x": 540,
+        "y": 140
+      },
+      "end": {
+        "componentId": "battery",
+        "pinName": "VCC",
+        "x": 580,
+        "y": 780
+      },
+      "waypoints": [
+        {
+          "x": 560,
+          "y": 140
+        },
+        {
+          "x": 560,
+          "y": 780
+        }
+      ],
+      "color": "#ef4444",
+      "signalType": "power-vcc",
+      "autoRouted": true
+    },
+    {
+      "id": "w37",
+      "start": {
+        "componentId": "esp",
+        "pinName": "GND",
+        "x": 540,
+        "y": 140
+      },
+      "end": {
+        "componentId": "battery",
+        "pinName": "GND",
+        "x": 580,
+        "y": 780
+      },
+      "waypoints": [
+        {
+          "x": 560,
+          "y": 140
+        },
+        {
+          "x": 560,
+          "y": 780
+        }
+      ],
+      "color": "#475569",
+      "signalType": "power-gnd",
+      "autoRouted": true
+    },
+    {
+      "id": "w38",
+      "start": {
+        "componentId": "battery",
+        "pinName": "SIG",
+        "x": 580,
+        "y": 780
+      },
+      "end": {
+        "componentId": "esp",
+        "pinName": "VP",
+        "x": 540,
+        "y": 140
+      },
+      "waypoints": [
+        {
+          "x": 560,
+          "y": 780
+        },
+        {
+          "x": 560,
+          "y": 140
+        }
+      ],
+      "color": "#fb923c",
+      "signalType": "analog",
+      "autoRouted": true
+    },
+    {
+      "id": "w39",
+      "start": {
+        "componentId": "esp",
+        "pinName": "25",
+        "x": 540,
+        "y": 140
+      },
+      "end": {
+        "componentId": "driver",
+        "pinName": "EN1",
+        "x": 1030,
+        "y": 720
+      },
+      "waypoints": [
+        {
+          "x": 785,
+          "y": 140
+        },
+        {
+          "x": 785,
+          "y": 720
+        }
+      ],
+      "color": "#facc15",
+      "signalType": "pwm",
+      "autoRouted": true
+    },
+    {
+      "id": "w40",
+      "start": {
+        "componentId": "esp",
+        "pinName": "26",
+        "x": 540,
+        "y": 140
+      },
+      "end": {
+        "componentId": "driver",
+        "pinName": "IN1",
+        "x": 1030,
+        "y": 720
+      },
+      "waypoints": [
+        {
+          "x": 785,
+          "y": 140
+        },
+        {
+          "x": 785,
+          "y": 720
+        }
+      ],
+      "color": "#38bdf8",
+      "signalType": "digital",
+      "autoRouted": true
+    },
+    {
+      "id": "w41",
+      "start": {
+        "componentId": "esp",
+        "pinName": "27",
+        "x": 540,
+        "y": 140
+      },
+      "end": {
+        "componentId": "driver",
+        "pinName": "IN2",
+        "x": 1030,
+        "y": 720
+      },
+      "waypoints": [
+        {
+          "x": 785,
+          "y": 140
+        },
+        {
+          "x": 785,
+          "y": 720
+        }
+      ],
+      "color": "#38bdf8",
+      "signalType": "digital",
+      "autoRouted": true
+    },
+    {
+      "id": "w42",
+      "start": {
+        "componentId": "esp",
+        "pinName": "14",
+        "x": 540,
+        "y": 140
+      },
+      "end": {
+        "componentId": "driver",
+        "pinName": "EN2",
+        "x": 1030,
+        "y": 720
+      },
+      "waypoints": [
+        {
+          "x": 785,
+          "y": 140
+        },
+        {
+          "x": 785,
+          "y": 720
+        }
+      ],
+      "color": "#facc15",
+      "signalType": "pwm",
+      "autoRouted": true
+    },
+    {
+      "id": "w43",
+      "start": {
+        "componentId": "esp",
+        "pinName": "18",
+        "x": 540,
+        "y": 140
+      },
+      "end": {
+        "componentId": "driver",
+        "pinName": "IN3",
+        "x": 1030,
+        "y": 720
+      },
+      "waypoints": [
+        {
+          "x": 785,
+          "y": 140
+        },
+        {
+          "x": 785,
+          "y": 720
+        }
+      ],
+      "color": "#38bdf8",
+      "signalType": "digital",
+      "autoRouted": true
+    },
+    {
+      "id": "w44",
+      "start": {
+        "componentId": "esp",
+        "pinName": "19",
+        "x": 540,
+        "y": 140
+      },
+      "end": {
+        "componentId": "driver",
+        "pinName": "IN4",
+        "x": 1030,
+        "y": 720
+      },
+      "waypoints": [
+        {
+          "x": 785,
+          "y": 140
+        },
+        {
+          "x": 785,
+          "y": 720
+        }
+      ],
+      "color": "#38bdf8",
+      "signalType": "digital",
+      "autoRouted": true
+    },
+    {
+      "id": "w45",
+      "start": {
+        "componentId": "psu",
+        "pinName": "SIG",
+        "x": 1330,
+        "y": 460
+      },
+      "end": {
+        "componentId": "driver",
+        "pinName": "VCC1",
+        "x": 1030,
+        "y": 720
+      },
+      "waypoints": [
+        {
+          "x": 1180,
+          "y": 460
+        },
+        {
+          "x": 1180,
+          "y": 720
+        }
+      ],
+      "color": "#ef4444",
+      "signalType": "power-vcc",
+      "autoRouted": true
+    },
+    {
+      "id": "w46",
+      "start": {
+        "componentId": "psu",
+        "pinName": "SIG",
+        "x": 1330,
+        "y": 460
+      },
+      "end": {
+        "componentId": "driver",
+        "pinName": "VCC2",
+        "x": 1030,
+        "y": 720
+      },
+      "waypoints": [
+        {
+          "x": 1180,
+          "y": 460
+        },
+        {
+          "x": 1180,
+          "y": 720
+        }
+      ],
+      "color": "#ef4444",
+      "signalType": "power-vcc",
+      "autoRouted": true
+    },
+    {
+      "id": "w47",
+      "start": {
+        "componentId": "driver",
+        "pinName": "GND.1",
+        "x": 1030,
+        "y": 720
+      },
+      "end": {
+        "componentId": "psu",
+        "pinName": "GND",
+        "x": 1330,
+        "y": 460
+      },
+      "waypoints": [
+        {
+          "x": 1180,
+          "y": 720
+        },
+        {
+          "x": 1180,
+          "y": 460
+        }
+      ],
+      "color": "#475569",
+      "signalType": "power-gnd",
+      "autoRouted": true
+    },
+    {
+      "id": "w48",
+      "start": {
+        "componentId": "driver",
+        "pinName": "GND.2",
+        "x": 1030,
+        "y": 720
+      },
+      "end": {
+        "componentId": "psu",
+        "pinName": "GND",
+        "x": 1330,
+        "y": 460
+      },
+      "waypoints": [
+        {
+          "x": 1180,
+          "y": 720
+        },
+        {
+          "x": 1180,
+          "y": 460
+        }
+      ],
+      "color": "#475569",
+      "signalType": "power-gnd",
+      "autoRouted": true
+    },
+    {
+      "id": "w49",
+      "start": {
+        "componentId": "driver",
+        "pinName": "GND.3",
+        "x": 1030,
+        "y": 720
+      },
+      "end": {
+        "componentId": "psu",
+        "pinName": "GND",
+        "x": 1330,
+        "y": 460
+      },
+      "waypoints": [
+        {
+          "x": 1180,
+          "y": 720
+        },
+        {
+          "x": 1180,
+          "y": 460
+        }
+      ],
+      "color": "#475569",
+      "signalType": "power-gnd",
+      "autoRouted": true
+    },
+    {
+      "id": "w50",
+      "start": {
+        "componentId": "driver",
+        "pinName": "GND.4",
+        "x": 1030,
+        "y": 720
+      },
+      "end": {
+        "componentId": "psu",
+        "pinName": "GND",
+        "x": 1330,
+        "y": 460
+      },
+      "waypoints": [
+        {
+          "x": 1180,
+          "y": 720
+        },
+        {
+          "x": 1180,
+          "y": 460
+        }
+      ],
+      "color": "#475569",
+      "signalType": "power-gnd",
+      "autoRouted": true
+    },
+    {
+      "id": "w51",
+      "start": {
+        "componentId": "driver",
+        "pinName": "OUT1",
+        "x": 1030,
+        "y": 720
+      },
+      "end": {
+        "componentId": "left-front-winding",
+        "pinName": "1",
+        "x": 1230,
+        "y": 700
+      },
+      "waypoints": [
+        {
+          "x": 1130,
+          "y": 720
+        },
+        {
+          "x": 1130,
+          "y": 700
+        }
+      ],
+      "color": "#fb923c",
+      "signalType": "analog",
+      "autoRouted": true
+    },
+    {
+      "id": "w52",
+      "start": {
+        "componentId": "driver",
+        "pinName": "OUT2",
+        "x": 1030,
+        "y": 720
+      },
+      "end": {
+        "componentId": "left-front-winding",
+        "pinName": "2",
+        "x": 1230,
+        "y": 700
+      },
+      "waypoints": [
+        {
+          "x": 1130,
+          "y": 720
+        },
+        {
+          "x": 1130,
+          "y": 700
+        }
+      ],
+      "color": "#fb923c",
+      "signalType": "analog",
+      "autoRouted": true
+    },
+    {
+      "id": "w53",
+      "start": {
+        "componentId": "driver",
+        "pinName": "OUT1",
+        "x": 1030,
+        "y": 720
+      },
+      "end": {
+        "componentId": "left-rear-winding",
+        "pinName": "1",
+        "x": 1400,
+        "y": 700
+      },
+      "waypoints": [
+        {
+          "x": 1215,
+          "y": 720
+        },
+        {
+          "x": 1215,
+          "y": 700
+        }
+      ],
+      "color": "#fb923c",
+      "signalType": "analog",
+      "autoRouted": true
+    },
+    {
+      "id": "w54",
+      "start": {
+        "componentId": "driver",
+        "pinName": "OUT2",
+        "x": 1030,
+        "y": 720
+      },
+      "end": {
+        "componentId": "left-rear-winding",
+        "pinName": "2",
+        "x": 1400,
+        "y": 700
+      },
+      "waypoints": [
+        {
+          "x": 1215,
+          "y": 720
+        },
+        {
+          "x": 1215,
+          "y": 700
+        }
+      ],
+      "color": "#fb923c",
+      "signalType": "analog",
+      "autoRouted": true
+    },
+    {
+      "id": "w55",
+      "start": {
+        "componentId": "driver",
+        "pinName": "OUT3",
+        "x": 1030,
+        "y": 720
+      },
+      "end": {
+        "componentId": "right-front-winding",
+        "pinName": "1",
+        "x": 1230,
+        "y": 840
+      },
+      "waypoints": [
+        {
+          "x": 1130,
+          "y": 720
+        },
+        {
+          "x": 1130,
+          "y": 840
+        }
+      ],
+      "color": "#fb923c",
+      "signalType": "analog",
+      "autoRouted": true
+    },
+    {
+      "id": "w56",
+      "start": {
+        "componentId": "driver",
+        "pinName": "OUT4",
+        "x": 1030,
+        "y": 720
+      },
+      "end": {
+        "componentId": "right-front-winding",
+        "pinName": "2",
+        "x": 1230,
+        "y": 840
+      },
+      "waypoints": [
+        {
+          "x": 1130,
+          "y": 720
+        },
+        {
+          "x": 1130,
+          "y": 840
+        }
+      ],
+      "color": "#fb923c",
+      "signalType": "analog",
+      "autoRouted": true
+    },
+    {
+      "id": "w57",
+      "start": {
+        "componentId": "driver",
+        "pinName": "OUT3",
+        "x": 1030,
+        "y": 720
+      },
+      "end": {
+        "componentId": "right-rear-winding",
+        "pinName": "1",
+        "x": 1400,
+        "y": 840
+      },
+      "waypoints": [
+        {
+          "x": 1215,
+          "y": 720
+        },
+        {
+          "x": 1215,
+          "y": 840
+        }
+      ],
+      "color": "#fb923c",
+      "signalType": "analog",
+      "autoRouted": true
+    },
+    {
+      "id": "w58",
+      "start": {
+        "componentId": "driver",
+        "pinName": "OUT4",
+        "x": 1030,
+        "y": 720
+      },
+      "end": {
+        "componentId": "right-rear-winding",
+        "pinName": "2",
+        "x": 1400,
+        "y": 840
+      },
+      "waypoints": [
+        {
+          "x": 1215,
+          "y": 720
+        },
+        {
+          "x": 1215,
+          "y": 840
+        }
+      ],
+      "color": "#fb923c",
+      "signalType": "analog",
+      "autoRouted": true
+    }
+  ],
+  "activeBoardId": "esp"
+}
