@@ -1,0 +1,65 @@
+{
+  "route": [
+    [
+      0,
+      0
+    ],
+    [
+      1,
+      0
+    ],
+    [
+      2,
+      0
+    ],
+    [
+      3,
+      0
+    ],
+    [
+      4,
+      0
+    ],
+    [
+      4,
+      1
+    ],
+    [
+      3,
+      1
+    ],
+    [
+      2,
+      1
+    ],
+    [
+      1,
+      1
+    ],
+    [
+      0,
+      1
+    ],
+    [
+      0,
+      0
+    ]
+  ],
+  "dock": [
+    0,
+    0,
+    0
+  ],
+  "speed": 0.13,
+  "battery_seconds": 600,
+  "return_battery": 30,
+  "repair_seconds": 3,
+  "selected_potholes": [
+    "P1",
+    "P2"
+  ],
+  "scenario": "nominal",
+  "fault_at": 25,
+  "camera_period_ms": 128,
+  "depth_period_ms": 64
+}

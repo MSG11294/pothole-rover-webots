@@ -1,0 +1,34 @@
+#VRML_SIM R2025a utf8
+EXTERNPROTO "../protos/Rover.proto"
+WorldInfo { basicTimeStep 32 coordinateSystem "ENU" contactProperties [ ContactProperties { material1 "rubber" coulombFriction [ .8 ] } ] }
+Viewpoint { orientation 0.15151802467041844 0.3919175642582944 0.9074375521355837 2.4667795217583475 position 7 6 7 }
+Background { skyColor [ .55 .7 .85 ] }
+DirectionalLight { direction -.5 -.4 -1 intensity 1 }
+DEF ROVER Rover { }
+Robot { name "course" supervisor TRUE controller "course" children [ Receiver { name "repair_rx" channel 2 } Emitter { name "ack_tx" channel 3 } ] }
+
+DEF P1 Solid { translation 2 0 -.04 name "P1" model "P1" }
+DEF P2 Solid { translation 3.5 1 -.04 name "P2" model "P2" }
+DEF DOCK Solid { translation -0.23 0 0.0005 name "DOCK" model "dock" children [ Shape { appearance PBRAppearance { baseColor .1 .6 .2 roughness 1 metalness 0 } geometry Box { size 0.16 0.6 0.001 } } ] recognitionColors [ .1 .6 .2 ] boundingObject Box { size 0.16 0.6 0.001 } }
+DEF VEHICLE Solid { translation 2.5 1.9 0.18 name "VEHICLE" model "vehicle" children [ Shape { appearance PBRAppearance { baseColor .85 .1 .08 roughness 1 metalness 0 } geometry Box { size 0.65 0.32 0.36 } } ] recognitionColors [ .85 .1 .08 ] boundingObject Box { size 0.65 0.32 0.36 } }
+DEF PEDESTRIAN Solid { translation 1.2 1.8 .8 name "PEDESTRIAN" model "pedestrian" recognitionColors [ .9 .65 .4 ] children [
+Transform { translation 0 0 .18 children [ Shape { appearance PBRAppearance { baseColor .85 .35 .12 roughness 1 } geometry Box { size .22 .32 .55 } } ] }
+Transform { translation 0 0 .65 children [ Shape { appearance PBRAppearance { baseColor .8 .6 .4 roughness 1 } geometry Sphere { radius .12 } } ] }
+Transform { translation 0 -.10 -.41 children [ Shape { appearance PBRAppearance { baseColor .15 .2 .3 roughness 1 } geometry Box { size .12 .11 .74 } } ] }
+Transform { translation 0 .10 -.41 children [ Shape { appearance PBRAppearance { baseColor .15 .2 .3 roughness 1 } geometry Box { size .12 .11 .74 } } ] }
+Transform { translation 0 -.22 .12 children [ Shape { appearance PBRAppearance { baseColor .8 .6 .4 roughness 1 } geometry Box { size .10 .09 .55 } } ] }
+Transform { translation 0 .22 .12 children [ Shape { appearance PBRAppearance { baseColor .8 .6 .4 roughness 1 } geometry Box { size .10 .09 .55 } } ] }
+] boundingObject Box { size .24 .52 1.6 } }
+DEF WALL294 Solid { translation 2 -1.02 0.2 name "WALL294" model "barrier" children [ Shape { appearance PBRAppearance { baseColor .65 .65 .65 roughness 1 metalness 0 } geometry Box { size 6 0.06 0.4 } } ] recognitionColors [ .65 .65 .65 ] boundingObject Box { size 6 0.06 0.4 } }
+DEF WALL295 Solid { translation 2 2.12 0.2 name "WALL295" model "barrier" children [ Shape { appearance PBRAppearance { baseColor .65 .65 .65 roughness 1 metalness 0 } geometry Box { size 6 0.06 0.4 } } ] recognitionColors [ .65 .65 .65 ] boundingObject Box { size 6 0.06 0.4 } }
+DEF WALL296 Solid { translation -1.02 0.55 0.2 name "WALL296" model "barrier" children [ Shape { appearance PBRAppearance { baseColor .65 .65 .65 roughness 1 metalness 0 } geometry Box { size 0.06 3.2 0.4 } } ] recognitionColors [ .65 .65 .65 ] boundingObject Box { size 0.06 3.2 0.4 } }
+DEF WALL297 Solid { translation 5.12 0.55 0.2 name "WALL297" model "barrier" children [ Shape { appearance PBRAppearance { baseColor .65 .65 .65 roughness 1 metalness 0 } geometry Box { size 0.06 3.2 0.4 } } ] recognitionColors [ .65 .65 .65 ] boundingObject Box { size 0.06 3.2 0.4 } }
+DEF ROAD0 Solid { translation 2.125 -0.5 -0.025 children [ Shape { appearance PBRAppearance { baseColor .28 .29 .30 roughness 1 metalness 0 } geometry Box { size 6.0 0.75 .05 } } ] boundingObject Box { size 6.0 0.75 .05 } }
+DEF ROAD1 Solid { translation 2.125 0.5 -0.025 children [ Shape { appearance PBRAppearance { baseColor .28 .29 .30 roughness 1 metalness 0 } geometry Box { size 6.0 0.75 .05 } } ] boundingObject Box { size 6.0 0.75 .05 } }
+DEF ROAD2 Solid { translation 2.125 1.625 -0.025 children [ Shape { appearance PBRAppearance { baseColor .28 .29 .30 roughness 1 metalness 0 } geometry Box { size 6.0 1.0 .05 } } ] boundingObject Box { size 6.0 1.0 .05 } }
+DEF ROAD3 Solid { translation 0.5 0.0 -0.025 children [ Shape { appearance PBRAppearance { baseColor .28 .29 .30 roughness 1 metalness 0 } geometry Box { size 2.75 0.25 .05 } } ] boundingObject Box { size 2.75 0.25 .05 } }
+DEF ROAD4 Solid { translation 3.625 0.0 -0.025 children [ Shape { appearance PBRAppearance { baseColor .28 .29 .30 roughness 1 metalness 0 } geometry Box { size 3.0 0.25 .05 } } ] boundingObject Box { size 3.0 0.25 .05 } }
+DEF ROAD5 Solid { translation 1.25 1.0 -0.025 children [ Shape { appearance PBRAppearance { baseColor .28 .29 .30 roughness 1 metalness 0 } geometry Box { size 4.25 0.25 .05 } } ] boundingObject Box { size 4.25 0.25 .05 } }
+DEF ROAD6 Solid { translation 4.375 1.0 -0.025 children [ Shape { appearance PBRAppearance { baseColor .28 .29 .30 roughness 1 metalness 0 } geometry Box { size 1.5 0.25 .05 } } ] boundingObject Box { size 1.5 0.25 .05 } }
+DEF ROAD7 Solid { translation 2.0 0.0 -0.065 children [ Shape { appearance PBRAppearance { baseColor .28 .29 .30 roughness 1 metalness 0 } geometry Box { size 0.25 0.25 .05 } } ] boundingObject Box { size 0.25 0.25 .05 } }
+DEF ROAD8 Solid { translation 3.5 1.0 -0.065 children [ Shape { appearance PBRAppearance { baseColor .28 .29 .30 roughness 1 metalness 0 } geometry Box { size 0.25 0.25 .05 } } ] boundingObject Box { size 0.25 0.25 .05 } }
